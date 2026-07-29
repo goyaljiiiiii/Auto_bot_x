@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { TelemetryState } from "@/app/types";
-import { Camera, Eye, RefreshCw, Hand, Box, CheckCircle2, AlertTriangle, Shield, Volume2, Maximize2, Sparkles } from "lucide-react";
+import { Camera, Eye, RefreshCw, Hand, Box, CheckCircle2, AlertTriangle, Sparkles } from "lucide-react";
 
 interface CameraViewProps {
   telemetry: TelemetryState;
@@ -32,18 +32,19 @@ export const CameraView: React.FC<CameraViewProps> = ({
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [handDetected, setHandDetected] = useState<boolean>(false);
-  const [landmarksCount, setLandmarksCount] = useState<number>(0);
-  const [detectedGestureLabel, setDetectedGestureLabel] = useState<string | null>(null);
-  
+  const [fingerCount, setFingerCount] = useState<number>(0);
+  const [gestureText, setGestureText] = useState<string>("Show your hand to camera");
+
   // Feature Toggles
   const [showSkeleton, setShowSkeleton] = useState<boolean>(true);
   const [showObjectDetector, setShowObjectDetector] = useState<boolean>(true);
   const [isVisionLoading, setIsVisionLoading] = useState<boolean>(true);
   const [detectedObjects, setDetectedObjects] = useState<{ label: string; score: number }[]>([]);
 
-  // Refs for tracking model states
+  // Models & Landmark Refs
   const handsModelRef = useRef<any>(null);
   const cocoModelRef = useRef<any>(null);
+  const latestHandLandmarksRef = useRef<any[]>([]);
 
   // Load Computer Vision Scripts (MediaPipe Hands + COCO-SSD Object Detector)
   useEffect(() => {
@@ -71,12 +72,12 @@ export const CameraView: React.FC<CameraViewProps> = ({
         // Load TensorFlow.js + COCO-SSD for Object Detection
         await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js");
         await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js");
-        
+
         if (window.cocoSsd && isMounted) {
           cocoModelRef.current = await window.cocoSsd.load();
         }
 
-        // Load MediaPipe Hands for Hand Skeleton & Gesture Tracking
+        // Load MediaPipe Hands for Real Hand Skeleton & Finger Counting
         await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
         await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
 
@@ -102,7 +103,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
         if (isMounted) setIsVisionLoading(false);
       } catch (err) {
-        console.warn("MediaPipe / COCO-SSD CDN scripts loading fallback:", err);
+        console.warn("MediaPipe / COCO-SSD initialization warning:", err);
         if (isMounted) setIsVisionLoading(false);
       }
     };
@@ -113,42 +114,60 @@ export const CameraView: React.FC<CameraViewProps> = ({
     };
   }, []);
 
-  // Process MediaPipe Hand Results
+  // Process Real Hand Results & Count Extended Fingers
   const processHandResults = (results: any) => {
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      latestHandLandmarksRef.current = results.multiHandLandmarks;
       setHandDetected(true);
-      const totalLandmarks = results.multiHandLandmarks.reduce(
-        (acc: number, landmarks: any[]) => acc + landmarks.length,
-        0
-      );
-      setLandmarksCount(totalLandmarks);
 
-      // Simple gesture detection logic (Open Palm vs SOS Fist/Fold)
       const hand = results.multiHandLandmarks[0];
       if (hand && hand.length >= 21) {
-        const wrist = hand[0];
-        const indexTip = hand[8];
-        const middleTip = hand[12];
-        const ringTip = hand[16];
-        const pinkyTip = hand[20];
+        // Calculate extended fingers
+        // Index (8 vs 6), Middle (12 vs 10), Ring (16 vs 14), Pinky (20 vs 18)
+        const isIndexUp = hand[8].y < hand[6].y;
+        const isMiddleUp = hand[12].y < hand[10].y;
+        const isRingUp = hand[16].y < hand[14].y;
+        const isPinkyUp = hand[20].y < hand[18].y;
 
-        // Calculate average finger distance to wrist
-        const avgFingerDist =
-          (Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y) +
-            Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y) +
-            Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y) +
-            Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y)) / 4;
+        // Thumb extension check (distance from thumb tip 4 to index mcp 5)
+        const thumbDist = Math.hypot(hand[4].x - hand[17].x, hand[4].y - hand[17].y);
+        const thumbBaseDist = Math.hypot(hand[2].x - hand[17].x, hand[2].y - hand[17].y);
+        const isThumbUp = thumbDist > thumbBaseDist * 1.2;
 
-        if (avgFingerDist < 0.22) {
-          const gesture = "SOS Palm Fold Signal";
-          setDetectedGestureLabel(gesture);
+        let count = 0;
+        if (isThumbUp) count++;
+        if (isIndexUp) count++;
+        if (isMiddleUp) count++;
+        if (isRingUp) count++;
+        if (isPinkyUp) count++;
+
+        setFingerCount(count);
+
+        let label = "";
+        if (count === 0) {
+          label = "✊ Fist Gesture Detected";
+        } else if (count === 1) {
+          label = "☝️ 1 Finger Gesture (Point)";
+        } else if (count === 2) {
+          label = "✌️ 2 Fingers Gesture (Peace / SOS)";
+        } else if (count === 3) {
+          label = "🤟 3 Fingers Gesture";
+        } else if (count === 4) {
+          label = "🖖 4 Fingers Gesture";
+        } else {
+          label = "🖐️ Open Hand / 5 Fingers";
+        }
+
+        setGestureText(label);
+
+        // If 2 Fingers or Fist held in monitoring mode, trigger gesture telemetry
+        if (count === 2 || count === 0) {
           onUpdateTelemetry((prev) => ({
             ...prev,
-            detectedGesture: gesture,
+            detectedGesture: label,
             gestureDetectionActive: true,
           }));
         } else {
-          setDetectedGestureLabel("Open Palm Active");
           onUpdateTelemetry((prev) => ({
             ...prev,
             detectedGesture: null,
@@ -157,9 +176,10 @@ export const CameraView: React.FC<CameraViewProps> = ({
         }
       }
     } else {
+      latestHandLandmarksRef.current = [];
       setHandDetected(false);
-      setLandmarksCount(0);
-      setDetectedGestureLabel(null);
+      setFingerCount(0);
+      setGestureText("Show your hand to camera");
       onUpdateTelemetry((prev) => ({
         ...prev,
         detectedGesture: null,
@@ -205,7 +225,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
     return () => stopCamera();
   }, []);
 
-  // Main Render Canvas Loop (Hand Skeleton + Object Detector Rendering)
+  // Canvas Rendering Loop
   useEffect(() => {
     let animationFrameId: number;
     let frameCount = 0;
@@ -232,7 +252,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
           canvas.width = video.videoWidth || 640;
           canvas.height = video.videoHeight || 480;
 
-          // Mirror video frame for user natural preview
+          // Mirror video frame for natural user view
           ctx.save();
           ctx.scale(-1, 1);
           ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
@@ -246,7 +266,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
             lastFpsCalc = now;
           }
 
-          // Send video frame to MediaPipe Hands if model ready
+          // Process MediaPipe Hand Landmarks on video frame
           if (handsModelRef.current && showSkeleton) {
             try {
               await handsModelRef.current.send({ image: video });
@@ -268,11 +288,10 @@ export const CameraView: React.FC<CameraViewProps> = ({
             } catch (e) {}
           }
 
-          // Draw Object Bounding Boxes
+          // Draw Object Detection Bounding Boxes
           if (showObjectDetector && cachedObjects.length > 0) {
             cachedObjects.forEach((obj: any) => {
               const [x, y, w, h] = obj.bbox;
-              // Mirror X coordinate for canvas drawing
               const mirroredX = canvas.width - (x + w);
 
               ctx.strokeStyle = obj.class === "person" ? "#10B981" : "#F59E0B";
@@ -281,7 +300,6 @@ export const CameraView: React.FC<CameraViewProps> = ({
               ctx.strokeRect(mirroredX, y, w, h);
               ctx.setLineDash([]);
 
-              // Box Label Tag
               ctx.fillStyle = obj.class === "person" ? "#10B981" : "#F59E0B";
               ctx.fillRect(mirroredX, Math.max(0, y - 24), Math.min(180, w), 24);
 
@@ -295,52 +313,38 @@ export const CameraView: React.FC<CameraViewProps> = ({
             });
           }
 
-          // Fallback Visual Skeleton overlay if hand detected or preview active
-          if (showSkeleton && (handDetected || telemetry.guardianActive)) {
-            const width = canvas.width;
-            const height = canvas.height;
-            const centerX = width / 2;
-            const centerY = height / 2;
+          // Render REAL MediaPipe Hand Skeleton ONLY when hand is detected on camera
+          if (showSkeleton && latestHandLandmarksRef.current.length > 0) {
+            latestHandLandmarksRef.current.forEach((handLandmarks: any[]) => {
+              // Convert 21 normalized landmarks (0..1) to mirrored canvas pixel coordinates
+              const points = handLandmarks.map((lm) => ({
+                x: (1 - lm.x) * canvas.width,
+                y: lm.y * canvas.height,
+              }));
 
-            const joints = [
-              { x: centerX, y: centerY + 70 },
-              { x: centerX - 25, y: centerY + 40 }, { x: centerX - 45, y: centerY + 20 }, { x: centerX - 60, y: centerY }, { x: centerX - 70, y: centerY - 15 },
-              { x: centerX - 25, y: centerY - 10 }, { x: centerX - 30, y: centerY - 50 }, { x: centerX - 32, y: centerY - 80 }, { x: centerX - 34, y: centerY - 100 },
-              { x: centerX, y: centerY - 15 }, { x: centerX, y: centerY - 55 }, { x: centerX, y: centerY - 90 }, { x: centerX, y: centerY - 115 },
-              { x: centerX + 22, y: centerY - 10 }, { x: centerX + 26, y: centerY - 50 }, { x: centerX + 29, y: centerY - 80 }, { x: centerX + 31, y: centerY - 100 },
-              { x: centerX + 45, y: centerY + 10 }, { x: centerX + 52, y: centerY - 20 }, { x: centerX + 56, y: centerY - 45 }, { x: centerX + 60, y: centerY - 65 },
-            ];
+              // Draw Skeleton Bones
+              ctx.strokeStyle = "#E07A5F";
+              ctx.lineWidth = 4;
+              connections.forEach(([i, j]) => {
+                if (points[i] && points[j]) {
+                  ctx.beginPath();
+                  ctx.moveTo(points[i].x, points[i].y);
+                  ctx.lineTo(points[j].x, points[j].y);
+                  ctx.stroke();
+                }
+              });
 
-            // Draw Skeleton Bone Connections
-            ctx.strokeStyle = "#E07A5F";
-            ctx.lineWidth = 3;
-            connections.forEach(([i, j]) => {
-              ctx.beginPath();
-              ctx.moveTo(joints[i].x, joints[i].y);
-              ctx.lineTo(joints[j].x, joints[j].y);
-              ctx.stroke();
+              // Draw 21 Landmark Joint Dots directly on the user's real hand
+              points.forEach((pt) => {
+                ctx.beginPath();
+                ctx.arc(pt.x, pt.y, 6, 0, Math.PI * 2);
+                ctx.fillStyle = "#3D2541";
+                ctx.fill();
+                ctx.strokeStyle = "#FFFFFF";
+                ctx.lineWidth = 2;
+                ctx.stroke();
+              });
             });
-
-            // Draw 21 Joint Dots
-            joints.forEach((pt) => {
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
-              ctx.fillStyle = "#3D2541";
-              ctx.fill();
-              ctx.strokeStyle = "#FFFFFF";
-              ctx.lineWidth = 1.5;
-              ctx.stroke();
-            });
-          }
-
-          // Render Gesture Status Banner Overlay
-          if (telemetry.detectedGesture || detectedGestureLabel) {
-            const text = telemetry.detectedGesture || detectedGestureLabel;
-            ctx.fillStyle = "rgba(224, 122, 95, 0.95)";
-            ctx.fillRect(canvas.width / 2 - 130, 16, 260, 36);
-            ctx.fillStyle = "#FFFFFF";
-            ctx.font = "bold 13px 'Plus Jakarta Sans', sans-serif";
-            ctx.fillText(text ? text.toUpperCase() : "GESTURE DETECTED", canvas.width / 2 - 100, 39);
           }
         }
       }
@@ -350,15 +354,15 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [telemetry, showSkeleton, showObjectDetector, handDetected, onUpdateTelemetry]);
+  }, [telemetry, showSkeleton, showObjectDetector, onUpdateTelemetry]);
 
   const triggerDemoSOS = () => {
     onUpdateTelemetry((prev) => ({
       ...prev,
-      detectedGesture: "Hands-Free SOS Gesture",
+      detectedGesture: "2 Fingers SOS Gesture",
       gestureDetectionActive: true,
     }));
-    onTriggerSOS("Hands-Free SOS Gesture Signal");
+    onTriggerSOS("2 Fingers Gesture SOS Signal");
   };
 
   return (
@@ -371,10 +375,10 @@ export const CameraView: React.FC<CameraViewProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-extrabold text-[#3D2541] uppercase tracking-wide">
-              {isSoloPage ? "Solo OpenCV Sentinel & AI Vision Camera" : "Camera Vision Sentinel"}
+              {isSoloPage ? "Solo OpenCV Sentinel & Real Hand Gesture Camera" : "Camera Vision & Gesture Sentinel"}
             </h3>
-            <p className="text-[10px] text-[#6B6871] font-semibold">
-              Real-time MediaPipe Hand Skeleton & Object Detection
+            <p className="text-xs text-[#6B6871] font-bold text-purple-800">
+              {handDetected ? `Status: ${gestureText} (${fingerCount} Fingers)` : "Status: Show hand to camera for skeleton"}
             </p>
           </div>
         </div>
@@ -383,7 +387,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
           {isVisionLoading && (
             <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
               <Sparkles className="w-3 h-3 animate-spin text-amber-600" />
-              <span>Loading AI Vision...</span>
+              <span>Loading Vision AI...</span>
             </span>
           )}
 
@@ -393,7 +397,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
             }`}
           >
             <span className={`w-2 h-2 rounded-full ${isCameraActive ? "bg-emerald-500 animate-ping" : "bg-slate-400"}`} />
-            <span>{isCameraActive ? "Live Sentinel Active" : "Camera Offline"}</span>
+            <span>{isCameraActive ? "Live Camera Feed" : "Camera Offline"}</span>
           </span>
         </div>
       </div>
@@ -416,6 +420,14 @@ export const CameraView: React.FC<CameraViewProps> = ({
               <RefreshCw className="w-4 h-4" />
               <span>Restart Camera Feed</span>
             </button>
+          </div>
+        )}
+
+        {/* Floating Live Gesture Badge on Canvas */}
+        {handDetected && (
+          <div className="absolute bottom-4 left-4 px-4 py-2 rounded-xl bg-black/80 backdrop-blur-md border border-purple-300/40 text-white text-xs font-extrabold shadow-xl flex items-center gap-2 z-10">
+            <Hand className="w-4 h-4 text-emerald-400" />
+            <span>{gestureText}</span>
           </div>
         )}
 
