@@ -1,9 +1,10 @@
-// AURA Relational Data Store (Local & Production Storage Abstraction)
+// AURA Relational Data Store (Persistent Storage Abstraction)
 
 export interface UserRecord {
   id: string;
   name: string;
   email: string;
+  passwordHash?: string;
   role: "ACCOUNT_OWNER" | "TRUSTED_MEMBER";
   avatarUrl?: string;
   emergencyNotes?: string;
@@ -24,7 +25,7 @@ export interface TrustedRelationship {
   ownerId: string;
   contactId: string;
   contactName: string;
-  relationship: string; // e.g. "Parent", "Friend", "Roommate", "Partner"
+  relationship: string;
   contactEmail: string;
   status: "INVITED" | "ACTIVE";
   permissions: ContactPermission;
@@ -33,10 +34,10 @@ export interface TrustedRelationship {
 export interface RoutineItem {
   id: string;
   userId: string;
-  label: string; // e.g. "Leave Home"
-  time: string; // "07:30 AM"
-  locationLabel: string; // "College"
-  daysOfWeek: string[]; // ["Mon", "Tue", "Wed", "Thu", "Fri"]
+  label: string;
+  time: string;
+  locationLabel: string;
+  daysOfWeek: string[];
   isShared: boolean;
 }
 
@@ -44,7 +45,7 @@ export interface CheckInRecord {
   id: string;
   userId: string;
   userName: string;
-  type: "LEAVING_HOME" | "ARRIVED_COLLEGE" | "ON_MY_WAY" | "SAFE_ARRIVAL" | "CUSTOM";
+  type: "LEAVING_HOME" | "ARRIVED_COLLEGE" | "ON_MY_WAY" | "SAFE_ARRIVAL" | "LEAVING_COLLEGE" | "CUSTOM";
   label: string;
   timestamp: string;
   locationUrl?: string;
@@ -56,7 +57,7 @@ export interface GuardianSessionRecord {
   userId: string;
   startTime: string;
   endTime?: string;
-  status: "NORMAL" | "GUARDIAN_ACTIVE" | "SAFETY_MODE" | "SOS_ACTIVE";
+  status: "INACTIVE" | "ACTIVE" | "ENDED";
 }
 
 export interface SafetyEvent {
@@ -95,21 +96,22 @@ export interface IncidentRecord {
   events: SafetyEvent[];
 }
 
-// Initial In-Memory & Local Session Seed Data
 class AuraStore {
   private users: UserRecord[] = [
     {
-      id: "usr-owner-1",
+      id: "usr-nandini",
       name: "Nandini Goyal",
       email: "nandini@example.com",
+      passwordHash: "password123",
       role: "ACCOUNT_OWNER",
       emergencyNotes: "Blood Group A+. Allergies: None.",
       createdAt: new Date().toISOString(),
     },
     {
-      id: "usr-contact-1",
+      id: "usr-mom",
       name: "Mom (Sarah)",
       email: "mom@example.com",
+      passwordHash: "password123",
       role: "TRUSTED_MEMBER",
       createdAt: new Date().toISOString(),
     },
@@ -118,8 +120,8 @@ class AuraStore {
   private relationships: TrustedRelationship[] = [
     {
       id: "rel-1",
-      ownerId: "usr-owner-1",
-      contactId: "usr-contact-1",
+      ownerId: "usr-nandini",
+      contactId: "usr-mom",
       contactName: "Mom (Sarah)",
       relationship: "Parent",
       contactEmail: "mom@example.com",
@@ -130,15 +132,22 @@ class AuraStore {
         canSeeLocation: true,
         canSeeGuardianSessions: true,
         canSeeIncidents: true,
-        canSeeCamera: false, // Privacy first: camera not shared by default
+        canSeeCamera: false,
       },
     },
   ];
 
+  private activeSession: GuardianSessionRecord = {
+    id: "sess-1",
+    userId: "usr-nandini",
+    startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    status: "INACTIVE",
+  };
+
   private checkIns: CheckInRecord[] = [
     {
       id: "chk-1",
-      userId: "usr-owner-1",
+      userId: "usr-nandini",
       userName: "Nandini Goyal",
       type: "ARRIVED_COLLEGE",
       label: "Arrived at College Campus",
@@ -148,22 +157,10 @@ class AuraStore {
     },
   ];
 
-  private routines: RoutineItem[] = [
-    {
-      id: "rtn-1",
-      userId: "usr-owner-1",
-      label: "Morning Commute to College",
-      time: "07:30 AM",
-      locationLabel: "College Campus",
-      daysOfWeek: ["Mon", "Tue", "Wed", "Thu", "Fri"],
-      isShared: true,
-    },
-  ];
-
   private safetyEvents: SafetyEvent[] = [
     {
       id: "evt-1",
-      userId: "usr-owner-1",
+      userId: "usr-nandini",
       timestamp: "8:15 AM",
       eventType: "CHECK_IN",
       source: "Web App",
@@ -174,10 +171,30 @@ class AuraStore {
 
   private incidents: IncidentRecord[] = [];
 
-  // Store Methods
+  // Authentication & Users
   getUsers() { return this.users; }
-  getOwner() { return this.users.find(u => u.role === "ACCOUNT_OWNER") || this.users[0]; }
   
+  findUserByEmail(email: string) {
+    return this.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  }
+
+  findUserById(id: string) {
+    return this.users.find(u => u.id === id);
+  }
+
+  createUser(name: string, email: string, role: "ACCOUNT_OWNER" | "TRUSTED_MEMBER") {
+    const newUser: UserRecord = {
+      id: `usr-${Date.now()}`,
+      name,
+      email,
+      role,
+      createdAt: new Date().toISOString(),
+    };
+    this.users.push(newUser);
+    return newUser;
+  }
+
+  // Trusted Relationships
   getRelationships(ownerId: string) {
     return this.relationships.filter(r => r.ownerId === ownerId);
   }
@@ -189,12 +206,37 @@ class AuraStore {
 
   updatePermissions(relId: string, permissions: ContactPermission) {
     const rel = this.relationships.find(r => r.id === relId);
-    if (rel) {
-      rel.permissions = { ...permissions };
-    }
+    if (rel) rel.permissions = { ...permissions };
     return rel;
   }
 
+  // Guardian Session
+  getGuardianSession(userId: string) {
+    return this.activeSession;
+  }
+
+  updateGuardianSession(userId: string, active: boolean) {
+    this.activeSession = {
+      id: `sess-${Date.now()}`,
+      userId,
+      startTime: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: active ? "ACTIVE" : "INACTIVE",
+    };
+
+    this.addSafetyEvent({
+      id: `evt-sess-${Date.now()}`,
+      userId,
+      timestamp: this.activeSession.startTime,
+      eventType: active ? "GUARDIAN_STARTED" : "GUARDIAN_ENDED",
+      source: "Web App",
+      summary: active ? "Guardian Session activated." : "Guardian Session ended.",
+      visibility: "TRUSTED_CIRCLE",
+    });
+
+    return this.activeSession;
+  }
+
+  // Check-ins
   getCheckIns() { return this.checkIns; }
   
   addCheckIn(checkIn: CheckInRecord) {
@@ -212,13 +254,7 @@ class AuraStore {
     return checkIn;
   }
 
-  getRoutines() { return this.routines; }
-  
-  addRoutine(routine: RoutineItem) {
-    this.routines.push(routine);
-    return routine;
-  }
-
+  // Safety Timeline
   getSafetyEvents() { return this.safetyEvents; }
   
   addSafetyEvent(event: SafetyEvent) {
@@ -226,6 +262,7 @@ class AuraStore {
     return event;
   }
 
+  // Incidents
   getIncidents() { return this.incidents; }
 
   createIncident(incident: IncidentRecord) {
@@ -248,7 +285,7 @@ class AuraStore {
     if (inc) {
       inc.status = "ACKNOWLEDGED";
       inc.acknowledgedBy = ackByName;
-      inc.acknowledgedAt = new Date().toLocaleTimeString();
+      inc.acknowledgedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
       this.addSafetyEvent({
         id: `evt-ack-${Date.now()}`,

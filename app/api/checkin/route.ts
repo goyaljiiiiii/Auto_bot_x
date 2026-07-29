@@ -9,7 +9,7 @@ export async function GET() {
 export async function POST(req: Request) {
   try {
     const { type, label, locationUrl, isShared } = await req.json();
-    const owner = auraStore.getOwner();
+    const owner = auraStore.getUsers()[0];
 
     const record = auraStore.addCheckIn({
       id: `chk-${Date.now()}`,

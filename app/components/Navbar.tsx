@@ -1,9 +1,9 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Shield, Users, Clock, Lock, Bot, UserCheck, Sparkles, CheckSquare } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Shield, Users, Clock, Lock, Bot, Sparkles, LogOut, User } from "lucide-react";
 
 interface NavbarProps {
   demoModeActive: boolean;
@@ -17,6 +17,25 @@ export const Navbar: React.FC<NavbarProps> = ({
   isCompanionConnected,
 }) => {
   const pathname = usePathname();
+  const router = useRouter();
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    const stored = localStorage.getItem("aura_user");
+    if (stored) {
+      try {
+        setCurrentUser(JSON.parse(stored));
+      } catch (e) {}
+    } else {
+      setCurrentUser({ name: "Nandini Goyal", role: "ACCOUNT_OWNER" });
+    }
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("aura_user");
+    setCurrentUser(null);
+    router.push("/login");
+  };
 
   const navLinks = [
     { href: "/", label: "Dashboard", icon: Shield },
@@ -46,7 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             : "bg-slate-50 border-slate-200 text-slate-500"
         }`}>
           <Bot className="w-3.5 h-3.5" />
-          <span>{isCompanionConnected ? "Companion Connected" : "Companion Extension Available"}</span>
+          <span>{isCompanionConnected ? "Companion Connected" : "Companion Optional"}</span>
         </span>
       </div>
 
@@ -72,7 +91,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         })}
       </div>
 
-      {/* Demo Mode Toggle & Profile Switcher */}
+      {/* Demo Mode & User Profile Session */}
       <div className="flex items-center gap-3 text-xs font-semibold">
         <button
           onClick={onToggleDemoMode}
@@ -86,15 +105,31 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span>{demoModeActive ? "Demo Mode: ACTIVE" : "Enable Demo Mode"}</span>
         </button>
 
-        <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
-          <div className="w-8 h-8 rounded-full bg-purple-100 text-[#3D2541] flex items-center justify-center font-bold text-xs">
-            NG
+        {currentUser ? (
+          <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+            <div className="w-8 h-8 rounded-full bg-purple-100 text-[#3D2541] flex items-center justify-center font-bold text-xs">
+              {currentUser.name.slice(0, 2).toUpperCase()}
+            </div>
+            <div className="hidden sm:flex flex-col text-left">
+              <span className="text-xs font-bold text-[#2D2B30]">{currentUser.name}</span>
+              <span className="text-[10px] text-[#6B6871]">{currentUser.role === "ACCOUNT_OWNER" ? "Safety User" : "Trusted Contact"}</span>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Log Out"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all ml-1"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
-          <div className="hidden sm:flex flex-col text-left">
-            <span className="text-xs font-bold text-[#2D2B30]">Nandini</span>
-            <span className="text-[10px] text-[#6B6871]">Account Owner</span>
-          </div>
-        </div>
+        ) : (
+          <Link
+            href="/login"
+            className="px-3 py-1.5 rounded-xl bg-[#3D2541] text-white hover:bg-[#5A3B5F] text-xs font-semibold"
+          >
+            Log In
+          </Link>
+        )}
       </div>
     </nav>
   );

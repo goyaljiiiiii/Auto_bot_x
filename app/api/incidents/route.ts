@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     }
 
     // Create New SOS Incident
-    const owner = auraStore.getOwner();
+    const owner = auraStore.getUsers()[0];
     const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const newIncident = auraStore.createIncident({

@@ -9,7 +9,7 @@ export interface SessionUser {
 
 // Simple production-ready session token helper
 export function getCurrentSessionUser(): SessionUser {
-  const owner = auraStore.getOwner();
+  const owner = auraStore.getUsers()[0];
   return {
     id: owner.id,
     name: owner.name,

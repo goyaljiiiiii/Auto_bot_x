@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auraStore } from "@/lib/db/store";
 
 export async function GET() {
-  const owner = auraStore.getOwner();
+  const owner = auraStore.getUsers()[0];
   const relationships = auraStore.getRelationships(owner.id);
   return NextResponse.json({ success: true, relationships });
 }
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     }
 
     // Invite new trusted contact
-    const owner = auraStore.getOwner();
+    const owner = auraStore.getUsers()[0];
     const newRel = auraStore.addRelationship({
       id: `rel-${Date.now()}`,
       ownerId: owner.id,
