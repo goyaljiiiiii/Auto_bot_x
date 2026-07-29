@@ -28,6 +28,11 @@ env/
 .spotipyoauthcache
 *.log
 
+# Node.js
+node_modules/
+.next/
+next-env.d.ts
+
 # Local user/runtime data
 profiles.json
 asset/models/
