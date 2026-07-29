@@ -1,84 +1,81 @@
-# OmniSight Care AI 👁️⚡
-### *Assistive Vision & IoT Smart Home Guardian (Hackathon Edition)*
+# Aura Sentinel 🛡️
+### *A Hands-Free AI + IoT Personal Safety Companion for Women & Girls*
 
-OmniSight Care is a next-generation, **Vercel-deployable** assistive IoT smart home and health guardian system designed for individuals with motor impairments, Parkinson's/tremors, mobility constraints, or special medical needs.
-
-It combines in-browser **MediaPipe Computer Vision**, **WebSerial USB Hardware Driver**, **Medical Profile Adaptation**, **Active Servo Camera Tracking**, **AI Voice Controls**, and **Fall SOS Emergency Alerting**.
+**Aura Sentinel** is a calm, modern, consumer-grade safety companion designed to help women stay connected, aware, and in control when it matters most. During an uncomfortable or potentially unsafe situation, a user may not be able to safely pull out their phone, unlock it, and find an SOS button. Aura Sentinel provides a hands-free safety layer using computer vision, hand gesture recognition, Google Gemini AI incident summarization, and IoT hardware.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Product Architecture & MVP Features
 
-- **🌐 Vercel-Deployable Web App**: Zero-configuration deployment on Vercel. Computer Vision (Hands, Face, Pose) runs directly inside client browsers using WASM.
-- **🔌 WebSerial USB Arduino Driver**: Connect your Arduino/ESP32 directly over USB from Chrome or Edge—no local background Python process required!
-- **🩺 Medical Profile Engine**:
-  - *Parkinson's / Tremors Mode*: Filters hand jitter with tremor-smoothing & enables head-pose nod/tilt gestures.
-  - *Mobility Impaired Mode*: Enables continuous servo camera height & angle auto-locking.
-  - *Speech Impaired Mode*: Custom sign/hand gesture priority over voice.
-- **📷 Living Camera Auto-Tracking**: Servo motor physically pans camera to keep user centered in frame.
-- **🚨 Fall & Emergency SOS Guard**: Detects sudden falls or crossed-arm SOS posture, triggering siren, red strobe RGB LEDs, and dispatching emergency webhooks.
-- **🗣️ AI Voice Assistant**: Native Web Speech API speech-to-text and text-to-speech assistant.
-
----
-
-## 🛠️ Tech Stack
-
-- **Frontend & Web Framework**: Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS
-- **Styling & Aesthetics**: Cyberpunk Glassmorphism HUD, Framer Motion, Lucide Icons
-- **Vision Engine**: Client-side `@mediapipe/hands`, `@mediapipe/face_mesh`, `@mediapipe/pose`
-- **IoT & Hardware**: WebSerial API, Arduino C++ (`arduino/omnisight_firmware.ino`)
-- **Deployment**: Vercel Ready (`vercel.json`)
-
----
-
-## 🚀 Quick Start (Local Development)
-
-1. **Install Dependencies**:
-   ```bash
-   npm install
-   ```
-
-2. **Start Development Server**:
-   ```bash
-   npm run dev
-   ```
-   Open [http://localhost:3000](http://localhost:3000) in Google Chrome or Microsoft Edge.
-
-3. **Connect Hardware (Arduino)**:
-   - Flash `arduino/omnisight_firmware.ino` onto your Arduino UNO/Nano/ESP32.
-   - Plug the Arduino into your computer via USB.
-   - Click **Connect Arduino (USB)** in the top header of the web application.
+- **🌸 Soft Wellness & Safety UI**: Designed with a calm, modern visual identity (soft warm cream, deep plum, muted lavender, soft rose, charcoal text, rounded cards, and clean typography).
+- **🛡️ Guardian Mode Session**:
+  - Clear **Guardian Mode State Switcher** (OFF / ACTIVE).
+  - Large central safety status card displaying: ⚪ **NORMAL**, 🟢 **GUARDIAN MONITORING**, 🔴 **SOS ACTIVATED**.
+  - Real-time status indicators for Camera, Gesture Detection, Voice Trigger, IoT Device Connection, and Location.
+- **🖐️ Hands-Free SOS Flow**:
+  - Detects predefined hand gesture (Palm Fold Signal for Help) hands-free.
+  - Enters **SOS ACTIVATED** state.
+  - Activates visible IoT hardware response (RGB emergency lighting, siren buzzer, servo camera pan).
+  - Server-side **Google Gemini AI** generates a concise, factual incident summary based on objective context.
+  - Triggers a formatted **Trusted Contact Alert** (clearly labeled *"Demo Alert"* flow).
+- **👁️ Look Around (Camera Direction Controls)**:
+  - Physical servo panning controls: Look Left (0°), Center (90°), Look Right (180°), and "Look Behind Me".
+  - Explicitly checks WebSerial hardware connection before attempting physical movement.
+- **🤖 Remote Area Check (Rover Inspection)**:
+  - Remotely move rover a short distance (`MOTOR:FORWARD`, `LEFT`, `RIGHT`, `STOP`) for area inspection.
+- **👥 Trusted Contacts & Demo Alert**:
+  - Configure trusted contact details (Name, Relationship, Phone, Email, Contact Method).
+  - Test demo alert preview displaying structured incident details and Google Maps link.
+- **📋 Incident History Log**:
+  - Session history logging Date, Time, Trigger Type, Status, and factual Gemini Incident Summary.
 
 ---
 
-## ☁️ Deploying to Vercel
-
-1. Push your repository to GitHub:
-   ```bash
-   git add .
-   git commit -m "OmniSight Care Vercel Edition"
-   git push origin main
-   ```
-2. Import the repository into [Vercel Dashboard](https://vercel.com).
-3. Vercel will automatically detect **Next.js** and build the application!
-4. Anyone visiting your Vercel URL can open their webcam, connect their USB Arduino, select their medical profile, and experience the full system!
-
----
-
-## 🔌 Hardware Setup (Arduino Pinout)
+## 🛠️ Hardware Setup (Arduino Pinout)
 
 | Component | Arduino Pin | Function |
 | :--- | :--- | :--- |
-| **Servo Motor** | Pin 9 | Camera Pan Motor (0° to 180°) |
-| **Appliance LED 1** | Pin 6 | Main Light Simulation |
-| **Appliance LED 2** | Pin 7 | Fan / Appliance 2 |
-| **RGB Status Red** | Pin 3 (PWM) | Red Alarm / SOS Strobe |
-| **RGB Status Green** | Pin 5 (PWM) | Active Profile Status |
-| **RGB Status Blue** | Pin 10 (PWM) | Voice Listener Status |
-| **Buzzer** | Pin 8 | Emergency Alarm Siren |
+| **Servo Pan Motor** | Pin 9 | Camera Pan Motor (0° to 180°) |
+| **Motor Driver IN1 / IN2** | Pin 4 / Pin 2 | Left Wheel DC Motor |
+| **Motor Driver IN3 / IN4** | Pin 11 / Pin 12 | Right Wheel DC Motor |
+| **RGB Status LED** | Red=Pin 3, Green=Pin 5, Blue=Pin 10 | Status Indicator & Emergency Strobe |
+| **Siren Buzzer** | Pin 8 | Emergency Siren |
 
 ---
 
-## 📜 License & Security
+## 🔑 Environment Variables
 
-MIT License. Created for Hackathons. Never share production API keys or medical contact numbers publicly.
+Copy `.env.example` to `.env.local`:
+
+```bash
+# Optional: Google Gemini API Key for AI Incident Summaries
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+*Note: If no API key is configured, Aura Sentinel gracefully falls back to a local factual incident summary generator.*
+
+---
+
+## 🚀 Running Locally & Vercel Deployment
+
+### Local Development
+```bash
+npm install
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in Google Chrome or Microsoft Edge.
+
+### Vercel Deployment
+1. Push repository to GitHub.
+2. Import project into Vercel Dashboard (Next.js framework detected automatically).
+3. Set `GEMINI_API_KEY` in Vercel Environment Variables.
+4. Deploy!
+
+---
+
+## ⚖️ Responsible Product Principles
+
+1. Aura Sentinel is designed to assist and inform—it does not claim to guarantee personal safety or prevent attacks.
+2. The system does not claim to automatically identify dangerous people.
+3. Emergency contact alerts are demonstrated via a clearly labeled *"Demo Alert"* flow.
+4. All API keys remain protected on server-side API routes (`/api/gemini`).

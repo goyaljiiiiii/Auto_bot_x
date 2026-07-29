@@ -1,73 +1,87 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { UserProfile, TelemetryState, EmergencyAlert } from "@/app/types";
+import { TelemetryState, TrustedContact, IncidentEvent } from "@/app/types";
+import { LandingHero } from "@/app/components/LandingHero";
 import { Header } from "@/app/components/Header";
-import { CameraHUD } from "@/app/components/CameraHUD";
-import { ProfileSelector } from "@/app/components/ProfileSelector";
-import { SerialController } from "@/app/components/SerialController";
-import { TelemetryPanel } from "@/app/components/TelemetryPanel";
-import { VoiceAssistant } from "@/app/components/VoiceAssistant";
-import { EmergencyModal } from "@/app/components/EmergencyModal";
+import { GuardianStatusCard } from "@/app/components/GuardianStatusCard";
+import { CameraView } from "@/app/components/CameraView";
+import { DeviceControlPanel } from "@/app/components/DeviceControlPanel";
+import { TrustedContactsPanel } from "@/app/components/TrustedContactsPanel";
+import { IncidentHistoryPanel } from "@/app/components/IncidentHistoryPanel";
+import { SOSActivatedModal } from "@/app/components/SOSActivatedModal";
 
-const DEFAULT_PROFILE: UserProfile = {
-  id: "profile-1",
-  name: "Alex Vance",
-  condition: "Parkinson's / Tremors",
-  gestureSensitivity: "low",
-  adaptiveMode: "head_pose",
-  emergencyContact: "+1 (555) 019-2834",
-  medicalNotes: "User has resting tremors in right hand. Enabled tremor-smoothing & head pose gesture controls.",
-  gestures: [
-    { gesture: "HEAD_TILT_RIGHT", actionName: "Toggle Main Light", targetCommand: "LED1_TOGGLE" },
-    { gesture: "HEAD_NOD", actionName: "Toggle Fan / Appliance 2", targetCommand: "LED2_TOGGLE" },
-    { gesture: "OPEN_PALM_HOLD", actionName: "Trigger SOS Emergency", targetCommand: "ALERT_SOS" },
-  ],
-};
+const INITIAL_CONTACTS: TrustedContact[] = [
+  {
+    id: "contact-1",
+    name: "Sarah Vance",
+    relationship: "Family / Sister",
+    phone: "+1 (555) 019-2834",
+    email: "sarah@example.com",
+    contactMethod: "Demo Alert",
+    isPrimary: true,
+  },
+  {
+    id: "contact-2",
+    name: "Elena Rostova",
+    relationship: "Friend / Roommate",
+    phone: "+1 (555) 948-1120",
+    email: "elena@example.com",
+    contactMethod: "Demo Alert",
+    isPrimary: false,
+  },
+];
 
 export default function Home() {
-  const [profiles, setProfiles] = useState<UserProfile[]>([DEFAULT_PROFILE]);
+  const [activeTab, setActiveTab] = useState<"overview" | "device" | "contacts" | "history">("overview");
+
   const [telemetry, setTelemetry] = useState<TelemetryState>({
     fps: 0,
-    faceDetected: true,
-    faceName: "Alex Vance",
-    activeProfile: DEFAULT_PROFILE,
-    activeGesture: null,
-    gestureConfidence: 0.95,
-    servoAngle: 90,
-    autoTracking: true,
-    ledStatus: { r: 0, g: 240, b: 255 },
-    appliance1: false,
-    appliance2: false,
-    fallDetected: false,
-    voiceListening: false,
-    serialConnected: false,
+    guardianActive: false,
+    safetyState: "NORMAL",
+    cameraActive: false,
+    gestureDetectionActive: false,
+    detectedGesture: null,
+    voiceMonitoringActive: false,
+    serialState: "Disconnected",
     serialPortName: null,
+    servoAngle: 90,
+    emergencyLightActive: false,
+    buzzerActive: false,
+    latitude: null,
+    longitude: null,
   });
 
-  const [emergencyAlert, setEmergencyAlert] = useState<EmergencyAlert | null>(null);
+  const [contacts, setContacts] = useState<TrustedContact[]>(INITIAL_CONTACTS);
+  const [incidents, setIncidents] = useState<IncidentEvent[]>([]);
+  const [activeSOSIncident, setActiveSOSIncident] = useState<IncidentEvent | null>(null);
 
   // WebSerial API Refs
   const portRef = useRef<any>(null);
   const writerRef = useRef<any>(null);
 
-  // Fetch initial profiles from API
+  // Request Location
   useEffect(() => {
-    fetch("/api/profiles")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && data.profiles.length > 0) {
-          setProfiles(data.profiles);
-          setTelemetry((prev) => ({ ...prev, activeProfile: data.profiles[0] }));
-        }
-      })
-      .catch((err) => console.warn("Using offline default profiles", err));
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setTelemetry((prev) => ({
+            ...prev,
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          }));
+        },
+        (err) => console.warn("Location permission denied", err),
+        { enableHighAccuracy: true }
+      );
+    }
   }, []);
 
-  // WebSerial Connection Handler
+  // WebSerial Connection Handlers
   const connectSerial = async () => {
     if ("serial" in navigator) {
       try {
+        setTelemetry((prev) => ({ ...prev, serialState: "Connecting" }));
         const port = await (navigator as any).serial.requestPort();
         await port.open({ baudRate: 115200 });
 
@@ -80,18 +94,18 @@ export default function Home() {
 
         setTelemetry((prev) => ({
           ...prev,
-          serialConnected: true,
-          serialPortName: "Arduino USB",
+          serialState: "Connected",
+          serialPortName: "Arduino IoT Companion",
         }));
 
-        // Send initial setup RGB command
         await writer.write("RGB:0,240,255\n");
       } catch (err: any) {
-        console.error("WebSerial Connection Error:", err);
-        alert("Could not connect to USB serial device: " + err.message);
+        console.warn("WebSerial Connection Error:", err);
+        setTelemetry((prev) => ({ ...prev, serialState: "Disconnected" }));
+        alert("Could not connect to WebSerial USB device: " + err.message);
       }
     } else {
-      alert("WebSerial API is not supported in this browser. Please use Google Chrome or Microsoft Edge!");
+      alert("WebSerial API is supported in Google Chrome or Microsoft Edge.");
     }
   };
 
@@ -108,7 +122,7 @@ export default function Home() {
     } catch (e) {
       console.warn("Serial disconnect error:", e);
     }
-    setTelemetry((prev) => ({ ...prev, serialConnected: false, serialPortName: null }));
+    setTelemetry((prev) => ({ ...prev, serialState: "Disconnected", serialPortName: null }));
   };
 
   const sendSerialCommand = useCallback(async (cmd: string) => {
@@ -119,96 +133,185 @@ export default function Home() {
         console.error("Failed to write to WebSerial:", err);
       }
     } else {
-      console.log(`[Emulated Hardware Command]: ${cmd}`);
+      console.log(`[IoT Command Standby]: ${cmd}`);
     }
   }, []);
 
-  // Trigger SOS Emergency Alert
-  const triggerSOS = (reason: string) => {
-    const alertData: EmergencyAlert = {
-      active: true,
-      timestamp: new Date().toLocaleTimeString(),
-      reason,
-      user: telemetry.activeProfile.name,
-    };
-    setEmergencyAlert(alertData);
+  // Guardian Mode Toggle
+  const toggleGuardianMode = () => {
+    setTelemetry((prev) => {
+      const nextActive = !prev.guardianActive;
+      return {
+        ...prev,
+        guardianActive: nextActive,
+        safetyState: nextActive ? "MONITORING" : "NORMAL",
+        gestureDetectionActive: nextActive,
+        voiceMonitoringActive: nextActive,
+      };
+    });
+  };
 
-    // Turn RGB Red Strobe
-    setTelemetry((prev) => ({ ...prev, ledStatus: { r: 255, g: 0, b: 0 } }));
+  // Trigger Hands-Free SOS Flow
+  const triggerSOSFlow = async (triggerType: string = "Hands-Free SOS Gesture") => {
+    const timeStr = new Date().toLocaleTimeString();
+    const dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const locationUrl = telemetry.latitude && telemetry.longitude
+      ? `https://maps.google.com/?q=${telemetry.latitude},${telemetry.longitude}`
+      : undefined;
+
+    // Trigger IoT Physical Hardware Response
+    setTelemetry((prev) => ({
+      ...prev,
+      safetyState: "SOS_ACTIVATED",
+      emergencyLightActive: true,
+      buzzerActive: true,
+    }));
+
     sendSerialCommand("RGB:255,0,0");
     sendSerialCommand("BUZZER:1");
+    sendSerialCommand("SERVO:180");
 
-    // Dispatch notification to API
-    fetch("/api/alert", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(alertData),
-    }).catch((e) => console.warn("Offline alert logged"));
+    // Fetch Factual Summary from Gemini API
+    let summaryText = `Emergency gesture detected while Guardian Mode was active. System safety response initiated.`;
+
+    try {
+      const res = await fetch("/api/gemini", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          triggerType,
+          timestamp: timeStr,
+          guardianActive: telemetry.guardianActive,
+          personDetected: true,
+          deviceConnected: telemetry.serialState === "Connected",
+          locationUrl,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.summary) {
+        summaryText = data.summary;
+      }
+    } catch (e) {
+      console.warn("Using local summary fallback");
+    }
+
+    const newIncident: IncidentEvent = {
+      id: `incident-${Date.now()}`,
+      date: dateStr,
+      time: timeStr,
+      triggerType: triggerType as any,
+      status: "Demo Dispatch Logged",
+      summary: summaryText,
+      locationUrl,
+    };
+
+    setIncidents((prev) => [newIncident, ...prev]);
+    setActiveSOSIncident(newIncident);
   };
 
   const dismissSOS = () => {
-    setEmergencyAlert(null);
-    setTelemetry((prev) => ({ ...prev, ledStatus: { r: 0, g: 240, b: 255 } }));
+    setActiveSOSIncident(null);
+    setTelemetry((prev) => ({
+      ...prev,
+      safetyState: prev.guardianActive ? "MONITORING" : "NORMAL",
+      emergencyLightActive: false,
+      buzzerActive: false,
+    }));
+
     sendSerialCommand("RGB:0,240,255");
     sendSerialCommand("BUZZER:0");
+    sendSerialCommand("SERVO:90");
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#05070e] text-slate-100">
+    <div className="min-h-screen flex flex-col bg-[#FDFBF7] text-[#2D2B30]">
       {/* Header */}
       <Header
         telemetry={telemetry}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         onConnectSerial={connectSerial}
         onDisconnectSerial={disconnectSerial}
-        profiles={profiles}
-        onSelectProfile={(p) => setTelemetry((prev) => ({ ...prev, activeProfile: p }))}
       />
 
-      {/* Main Grid Layout */}
-      <main className="flex-1 p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6 max-w-[1700px] w-full mx-auto">
-        {/* Left Column: Camera HUD & Voice (7 cols on desktop) */}
-        <div className="lg:col-span-7 flex flex-col gap-6">
-          <CameraHUD
-            telemetry={telemetry}
-            onUpdateTelemetry={setTelemetry}
-            onTriggerSOS={triggerSOS}
-            onSendSerialCommand={sendSerialCommand}
-          />
-          <VoiceAssistant
-            telemetry={telemetry}
-            onUpdateTelemetry={setTelemetry}
-            onSendSerialCommand={sendSerialCommand}
-            onTriggerSOS={triggerSOS}
-          />
-        </div>
+      {/* Main Container */}
+      <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto flex flex-col gap-6">
+        {/* Landing Hero */}
+        <LandingHero
+          onEnterGuardianMode={() => {
+            if (!telemetry.guardianActive) toggleGuardianMode();
+            setActiveTab("overview");
+          }}
+          onConnectDevice={() => {
+            connectSerial();
+            setActiveTab("device");
+          }}
+        />
 
-        {/* Right Column: Medical Profiles, WebSerial Hardware Driver & Telemetry (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col gap-6">
-          <ProfileSelector
-            activeProfile={telemetry.activeProfile}
-            profiles={profiles}
-            onSelectProfile={(p) => setTelemetry((prev) => ({ ...prev, activeProfile: p }))}
-            onSaveProfile={(updated) => {
-              setProfiles((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-              setTelemetry((prev) => ({ ...prev, activeProfile: updated }));
-            }}
-          />
+        {/* Tab Views */}
+        {activeTab === "overview" && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left 7 Cols: Central Status Card & Camera */}
+            <div className="lg:col-span-7 flex flex-col gap-6">
+              <GuardianStatusCard
+                telemetry={telemetry}
+                onToggleGuardianMode={toggleGuardianMode}
+                onManualTriggerSOS={() => triggerSOSFlow("Manual Alert Button")}
+              />
+              <CameraView
+                telemetry={telemetry}
+                onUpdateTelemetry={setTelemetry}
+                onTriggerSOS={(reason) => triggerSOSFlow(reason)}
+              />
+            </div>
 
-          <SerialController
+            {/* Right 5 Cols: Quick Control & Contacts Preview */}
+            <div className="lg:col-span-5 flex flex-col gap-6">
+              <DeviceControlPanel
+                telemetry={telemetry}
+                onConnectSerial={connectSerial}
+                onDisconnectSerial={disconnectSerial}
+                onSendSerialCommand={sendSerialCommand}
+                onUpdateTelemetry={setTelemetry}
+              />
+              <TrustedContactsPanel
+                contacts={contacts}
+                onAddContact={(c) => setContacts((prev) => [...prev, c])}
+                onSendDemoAlert={(c) => triggerSOSFlow(`Demo Alert for ${c.name}`)}
+              />
+            </div>
+          </div>
+        )}
+
+        {activeTab === "device" && (
+          <DeviceControlPanel
             telemetry={telemetry}
+            onConnectSerial={connectSerial}
+            onDisconnectSerial={disconnectSerial}
             onSendSerialCommand={sendSerialCommand}
             onUpdateTelemetry={setTelemetry}
           />
+        )}
 
-          <TelemetryPanel telemetry={telemetry} />
-        </div>
+        {activeTab === "contacts" && (
+          <TrustedContactsPanel
+            contacts={contacts}
+            onAddContact={(c) => setContacts((prev) => [...prev, c])}
+            onSendDemoAlert={(c) => triggerSOSFlow(`Demo Alert for ${c.name}`)}
+          />
+        )}
+
+        {activeTab === "history" && (
+          <IncidentHistoryPanel incidents={incidents} />
+        )}
       </main>
 
-      {/* Emergency SOS Modal Overlay */}
-      {emergencyAlert && (
-        <EmergencyModal
-          alertData={emergencyAlert}
-          emergencyContact={telemetry.activeProfile.emergencyContact}
+      {/* SOS Activated Modal Overlay */}
+      {activeSOSIncident && (
+        <SOSActivatedModal
+          incident={activeSOSIncident}
+          primaryContact={contacts.find((c) => c.isPrimary) || contacts[0]}
+          locationUrl={activeSOSIncident.locationUrl}
           onDismiss={dismissSOS}
         />
       )}

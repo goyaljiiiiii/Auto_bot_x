@@ -1,104 +1,106 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { UserProfile, TelemetryState } from "@/app/types";
-import { Activity, ShieldAlert, Cpu, Usb, HeartPulse, User } from "lucide-react";
+import React from "react";
+import { TelemetryState } from "@/app/types";
+import { Shield, Bot, Usb, CheckCircle2, AlertCircle } from "lucide-react";
 
 interface HeaderProps {
   telemetry: TelemetryState;
+  activeTab: "overview" | "device" | "contacts" | "history";
+  onTabChange: (tab: "overview" | "device" | "contacts" | "history") => void;
   onConnectSerial: () => void;
   onDisconnectSerial: () => void;
-  profiles: UserProfile[];
-  onSelectProfile: (profile: UserProfile) => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   telemetry,
+  activeTab,
+  onTabChange,
   onConnectSerial,
   onDisconnectSerial,
-  profiles,
-  onSelectProfile,
 }) => {
-  const [currentTime, setCurrentTime] = useState<string>("");
-
-  useEffect(() => {
-    const update = () => {
-      setCurrentTime(new Date().toLocaleTimeString());
-    };
-    update();
-    const interval = setInterval(update, 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   return (
-    <header className="w-full glass-panel border-b border-cyber-border px-4 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40">
-      {/* Brand & Logo */}
+    <header className="w-full bg-white/80 backdrop-blur-md border-b border-purple-100 px-4 md:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-40">
+      {/* Brand & Identity */}
       <div className="flex items-center gap-3">
-        <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-cyber-cyan/10 border border-cyber-cyan/30 text-cyber-cyan shadow-glow">
-          <Activity className="w-6 h-6 animate-pulse" />
-          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-cyber-emerald rounded-full animate-ping" />
+        <div className="w-9 h-9 rounded-xl bg-[#3D2541] flex items-center justify-center text-white shadow-sm">
+          <Shield className="w-5 h-5 text-[#FFF0ED]" />
         </div>
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-extrabold tracking-wider bg-gradient-to-r from-cyber-cyan via-blue-400 to-cyber-purple bg-clip-text text-transparent">
-              OMNISIGHT CARE
-            </h1>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyber-cyan/10 border border-cyber-cyan/30 text-cyber-cyan">
-              v2.5 AI
-            </span>
-          </div>
-          <p className="text-xs text-cyber-dim font-mono">
-            Assistive IoT & Vision Guard • Hackathon Edition
+          <h1 className="text-lg font-bold text-[#2D2B30] tracking-tight">
+            AURA SENTINEL
+          </h1>
+          <p className="text-xs text-[#6B6871] font-medium">
+            Hands-Free Safety Companion
           </p>
         </div>
       </div>
 
-      {/* Profile Badge & Switcher */}
-      <div className="flex items-center gap-2 bg-cyber-card border border-cyber-border px-3 py-1.5 rounded-lg">
-        <HeartPulse className="w-4 h-4 text-cyber-rose animate-pulse" />
-        <div className="flex flex-col">
-          <span className="text-[10px] text-cyber-dim font-mono">ACTIVE MEDICAL PROFILE</span>
-          <select
-            value={telemetry.activeProfile.id}
-            onChange={(e) => {
-              const selected = profiles.find((p) => p.id === e.target.value);
-              if (selected) onSelectProfile(selected);
-            }}
-            className="bg-transparent text-sm font-semibold text-cyber-cyan focus:outline-none cursor-pointer"
-          >
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
-                {p.name} ({p.condition})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Live System Indicators */}
-      <div className="flex items-center gap-4 text-xs font-mono">
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-900/60 border border-slate-800">
-          <Cpu className="w-3.5 h-3.5 text-cyber-cyan" />
-          <span>FPS: <strong className="text-cyber-cyan">{telemetry.fps}</strong></span>
-        </div>
-
-        {/* WebSerial USB Connection Button */}
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-1 bg-purple-50/70 p-1 rounded-xl border border-purple-100 text-xs font-semibold text-[#6B6871]">
         <button
-          onClick={telemetry.serialConnected ? onDisconnectSerial : onConnectSerial}
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-md font-medium transition-all ${
-            telemetry.serialConnected
-              ? "bg-cyber-emerald/10 border border-cyber-emerald/40 text-cyber-emerald hover:bg-cyber-emerald/20 shadow-glow-emerald"
-              : "bg-cyber-amber/10 border border-cyber-amber/40 text-cyber-amber hover:bg-cyber-amber/20"
+          onClick={() => onTabChange("overview")}
+          className={`px-3 py-1.5 rounded-lg transition-all ${
+            activeTab === "overview"
+              ? "bg-white text-[#3D2541] shadow-sm"
+              : "hover:text-[#3D2541]"
           }`}
         >
-          <Usb className="w-4 h-4" />
-          <span>{telemetry.serialConnected ? "Arduino Connected" : "Connect Arduino (USB)"}</span>
+          Guardian Dashboard
         </button>
+        <button
+          onClick={() => onTabChange("device")}
+          className={`px-3 py-1.5 rounded-lg transition-all ${
+            activeTab === "device"
+              ? "bg-white text-[#3D2541] shadow-sm"
+              : "hover:text-[#3D2541]"
+          }`}
+        >
+          IoT Companion
+        </button>
+        <button
+          onClick={() => onTabChange("contacts")}
+          className={`px-3 py-1.5 rounded-lg transition-all ${
+            activeTab === "contacts"
+              ? "bg-white text-[#3D2541] shadow-sm"
+              : "hover:text-[#3D2541]"
+          }`}
+        >
+          Trusted Contacts
+        </button>
+        <button
+          onClick={() => onTabChange("history")}
+          className={`px-3 py-1.5 rounded-lg transition-all ${
+            activeTab === "history"
+              ? "bg-white text-[#3D2541] shadow-sm"
+              : "hover:text-[#3D2541]"
+          }`}
+        >
+          Incident Log
+        </button>
+      </div>
 
-        {/* Live Clock */}
-        <div className="hidden md:block text-slate-400 font-mono text-xs border-l border-slate-800 pl-4">
-          {currentTime}
-        </div>
+      {/* Hardware Connection Action */}
+      <div className="flex items-center gap-3 text-xs font-medium">
+        <button
+          onClick={
+            telemetry.serialState === "Connected" ? onDisconnectSerial : onConnectSerial
+          }
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl border transition-all ${
+            telemetry.serialState === "Connected"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-700 font-semibold"
+              : "bg-white border-purple-200 text-[#3D2541] hover:bg-purple-50"
+          }`}
+        >
+          <Usb className="w-3.5 h-3.5" />
+          <span>
+            {telemetry.serialState === "Connected"
+              ? "IoT Companion Connected"
+              : telemetry.serialState === "Connecting"
+              ? "Connecting..."
+              : "Connect IoT Companion"}
+          </span>
+        </button>
       </div>
     </header>
   );
