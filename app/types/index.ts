@@ -53,6 +53,37 @@ export interface IncidentEvent {
   locationUrl?: string;
 }
 
+export interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: "ACCOUNT_OWNER" | "TRUSTED_MEMBER";
+  safetyCode: string; // Unique safety code for pairing e.g. USR-98421
+  avatarUrl?: string;
+  phone?: string;
+}
+
+export interface PairingRequest {
+  id: string;
+  fromUserId: string;
+  fromUserName: string;
+  fromUserEmail: string;
+  toUserId: string;
+  toSafetyCode: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED";
+  timestamp: string;
+}
+
+export interface RoutineItem {
+  id: string;
+  userId: string;
+  label: string;
+  time: string;
+  locationLabel?: string;
+  daysOfWeek?: string[];
+  isShared?: boolean;
+}
+
 export interface TelemetryState {
   fps: number;
   guardianActive: boolean;
@@ -69,3 +100,4 @@ export interface TelemetryState {
   latitude: number | null;
   longitude: number | null;
 }
+

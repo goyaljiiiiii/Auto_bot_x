@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Shield, Users, Clock, Lock, Bot, Sparkles, LogOut, User } from "lucide-react";
+import { Shield, Users, Clock, Lock, Bot, Sparkles, LogOut, User, Camera, Info } from "lucide-react";
 
 interface NavbarProps {
   demoModeActive: boolean;
@@ -39,9 +39,10 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navLinks = [
     { href: "/", label: "Dashboard", icon: Shield },
+    { href: "/camera", label: "Solo Camera", icon: Camera },
+    { href: "/info", label: "Info & Hardware", icon: Info },
     { href: "/timeline", label: "Safety Timeline", icon: Clock },
     { href: "/contact-dashboard", label: "Trusted Contact View", icon: Users },
-    { href: "/privacy", label: "Privacy Center", icon: Lock },
   ];
 
   return (

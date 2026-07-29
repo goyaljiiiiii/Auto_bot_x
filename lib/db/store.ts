@@ -6,9 +6,22 @@ export interface UserRecord {
   email: string;
   passwordHash?: string;
   role: "ACCOUNT_OWNER" | "TRUSTED_MEMBER";
+  safetyCode: string; // e.g. USR-98421
+  phone?: string;
   avatarUrl?: string;
   emergencyNotes?: string;
   createdAt: string;
+}
+
+export interface PairingRequestRecord {
+  id: string;
+  fromUserId: string;
+  fromUserName: string;
+  fromUserEmail: string;
+  toUserId: string;
+  toSafetyCode: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED";
+  timestamp: string;
 }
 
 export interface ContactPermission {
@@ -104,6 +117,8 @@ class AuraStore {
       email: "nandini@example.com",
       passwordHash: "password123",
       role: "ACCOUNT_OWNER",
+      safetyCode: "USR-8F92A1",
+      phone: "+91 98765 43210",
       emergencyNotes: "Blood Group A+. Allergies: None.",
       createdAt: new Date().toISOString(),
     },
@@ -113,7 +128,32 @@ class AuraStore {
       email: "mom@example.com",
       passwordHash: "password123",
       role: "TRUSTED_MEMBER",
+      safetyCode: "GRD-334102",
+      phone: "+91 98123 45678",
       createdAt: new Date().toISOString(),
+    },
+  ];
+
+  private pairingRequests: PairingRequestRecord[] = [];
+
+  private routines: RoutineItem[] = [
+    {
+      id: "rt-1",
+      userId: "usr-nandini",
+      label: "Morning College Commute",
+      time: "08:30 AM",
+      locationLabel: "Campus Gate 2",
+      daysOfWeek: ["Mon", "Tue", "Wed", "Thu", "Fri"],
+      isShared: true,
+    },
+    {
+      id: "rt-2",
+      userId: "usr-nandini",
+      label: "Evening Library Return",
+      time: "06:00 PM",
+      locationLabel: "Main Library",
+      daysOfWeek: ["Mon", "Wed", "Fri"],
+      isShared: true,
     },
   ];
 
@@ -182,16 +222,109 @@ class AuraStore {
     return this.users.find(u => u.id === id);
   }
 
+  findUserBySafetyCode(code: string) {
+    return this.users.find(u => u.safetyCode?.toUpperCase() === code.trim().toUpperCase());
+  }
+
   createUser(name: string, email: string, role: "ACCOUNT_OWNER" | "TRUSTED_MEMBER") {
+    const randomCode = `USR-${Math.floor(100000 + Math.random() * 900000).toString(16).toUpperCase()}`;
     const newUser: UserRecord = {
       id: `usr-${Date.now()}`,
       name,
       email,
       role,
+      safetyCode: randomCode,
       createdAt: new Date().toISOString(),
     };
     this.users.push(newUser);
     return newUser;
+  }
+
+  // Pairing Requests & Guardian Connect
+  createPairingRequest(fromUser: { id: string; name: string; email: string }, safetyCode: string) {
+    const targetUser = this.findUserBySafetyCode(safetyCode);
+    if (!targetUser) {
+      throw new Error(`No user found with Safety Code "${safetyCode}"`);
+    }
+
+    const newReq: PairingRequestRecord = {
+      id: `pair-${Date.now()}`,
+      fromUserId: fromUser.id,
+      fromUserName: fromUser.name,
+      fromUserEmail: fromUser.email,
+      toUserId: targetUser.id,
+      toSafetyCode: safetyCode.toUpperCase(),
+      status: "PENDING",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    };
+
+    this.pairingRequests.unshift(newReq);
+    return { request: newReq, targetUser };
+  }
+
+  getPendingPairingRequests(userId: string) {
+    return this.pairingRequests.filter(r => r.toUserId === userId && r.status === "PENDING");
+  }
+
+  respondToPairingRequest(requestId: string, accept: boolean) {
+    const req = this.pairingRequests.find(r => r.id === requestId);
+    if (!req) return null;
+
+    req.status = accept ? "ACCEPTED" : "REJECTED";
+
+    if (accept) {
+      // Create relationship between target user (owner) and requesting guardian
+      const targetUser = this.findUserById(req.toUserId);
+      const newRel: TrustedRelationship = {
+        id: `rel-${Date.now()}`,
+        ownerId: req.toUserId,
+        contactId: req.fromUserId,
+        contactName: req.fromUserName,
+        relationship: "Guardian / Protector",
+        contactEmail: req.fromUserEmail,
+        status: "ACTIVE",
+        permissions: {
+          canSeeSOS: true,
+          canSeeCheckIns: true,
+          canSeeLocation: true,
+          canSeeGuardianSessions: true,
+          canSeeIncidents: true,
+          canSeeCamera: true,
+        },
+      };
+      this.relationships.push(newRel);
+
+      this.addSafetyEvent({
+        id: `evt-pair-${Date.now()}`,
+        userId: req.toUserId,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        eventType: "CONTACT_ALERT_CREATED",
+        source: "Web App",
+        summary: `Guardian relationship authorized for ${req.fromUserName} (${req.fromUserEmail}).`,
+        visibility: "TRUSTED_CIRCLE",
+      });
+    }
+
+    return req;
+  }
+
+  // Routines & Voice Mode Support
+  getRoutines(userId?: string) {
+    if (userId) return this.routines.filter(r => r.userId === userId);
+    return this.routines;
+  }
+
+  addRoutine(routine: Omit<RoutineItem, "id">) {
+    const newRoutine: RoutineItem = {
+      ...routine,
+      id: `rt-${Date.now()}`,
+    };
+    this.routines.unshift(newRoutine);
+    return newRoutine;
+  }
+
+  deleteRoutine(id: string) {
+    this.routines = this.routines.filter(r => r.id !== id);
   }
 
   // Trusted Relationships

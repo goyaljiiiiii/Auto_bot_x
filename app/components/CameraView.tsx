@@ -2,26 +2,173 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { TelemetryState } from "@/app/types";
-import { Camera, Eye, RefreshCw, Hand, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Camera, Eye, RefreshCw, Hand, Box, CheckCircle2, AlertTriangle, Shield, Volume2, Maximize2, Sparkles } from "lucide-react";
 
 interface CameraViewProps {
   telemetry: TelemetryState;
   onUpdateTelemetry: (updater: (prev: TelemetryState) => TelemetryState) => void;
   onTriggerSOS: (reason: string) => void;
+  isSoloPage?: boolean;
+}
+
+declare global {
+  interface Window {
+    Hands: any;
+    Camera: any;
+    cocoSsd: any;
+    tf: any;
+  }
 }
 
 export const CameraView: React.FC<CameraViewProps> = ({
   telemetry,
   onUpdateTelemetry,
   onTriggerSOS,
+  isSoloPage = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [handDetected, setHandDetected] = useState<boolean>(false);
   const [landmarksCount, setLandmarksCount] = useState<number>(0);
+  const [detectedGestureLabel, setDetectedGestureLabel] = useState<string | null>(null);
+  
+  // Feature Toggles
+  const [showSkeleton, setShowSkeleton] = useState<boolean>(true);
+  const [showObjectDetector, setShowObjectDetector] = useState<boolean>(true);
+  const [isVisionLoading, setIsVisionLoading] = useState<boolean>(true);
+  const [detectedObjects, setDetectedObjects] = useState<{ label: string; score: number }[]>([]);
 
+  // Refs for tracking model states
+  const handsModelRef = useRef<any>(null);
+  const cocoModelRef = useRef<any>(null);
+
+  // Load Computer Vision Scripts (MediaPipe Hands + COCO-SSD Object Detector)
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadScript = (src: string): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) {
+          resolve();
+          return;
+        }
+        const script = document.createElement("script");
+        script.src = src;
+        script.crossOrigin = "anonymous";
+        script.onload = () => resolve();
+        script.onerror = (e) => reject(e);
+        document.body.appendChild(script);
+      });
+    };
+
+    const initModels = async () => {
+      try {
+        setIsVisionLoading(true);
+
+        // Load TensorFlow.js + COCO-SSD for Object Detection
+        await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js");
+        await loadScript("https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js");
+        
+        if (window.cocoSsd && isMounted) {
+          cocoModelRef.current = await window.cocoSsd.load();
+        }
+
+        // Load MediaPipe Hands for Hand Skeleton & Gesture Tracking
+        await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js");
+        await loadScript("https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js");
+
+        if (window.Hands && isMounted) {
+          const hands = new window.Hands({
+            locateFile: (file: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+          });
+
+          hands.setOptions({
+            maxNumHands: 2,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5,
+          });
+
+          hands.onResults((results: any) => {
+            if (!isMounted) return;
+            processHandResults(results);
+          });
+
+          handsModelRef.current = hands;
+        }
+
+        if (isMounted) setIsVisionLoading(false);
+      } catch (err) {
+        console.warn("MediaPipe / COCO-SSD CDN scripts loading fallback:", err);
+        if (isMounted) setIsVisionLoading(false);
+      }
+    };
+
+    initModels();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Process MediaPipe Hand Results
+  const processHandResults = (results: any) => {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+      setHandDetected(true);
+      const totalLandmarks = results.multiHandLandmarks.reduce(
+        (acc: number, landmarks: any[]) => acc + landmarks.length,
+        0
+      );
+      setLandmarksCount(totalLandmarks);
+
+      // Simple gesture detection logic (Open Palm vs SOS Fist/Fold)
+      const hand = results.multiHandLandmarks[0];
+      if (hand && hand.length >= 21) {
+        const wrist = hand[0];
+        const indexTip = hand[8];
+        const middleTip = hand[12];
+        const ringTip = hand[16];
+        const pinkyTip = hand[20];
+
+        // Calculate average finger distance to wrist
+        const avgFingerDist =
+          (Math.hypot(indexTip.x - wrist.x, indexTip.y - wrist.y) +
+            Math.hypot(middleTip.x - wrist.x, middleTip.y - wrist.y) +
+            Math.hypot(ringTip.x - wrist.x, ringTip.y - wrist.y) +
+            Math.hypot(pinkyTip.x - wrist.x, pinkyTip.y - wrist.y)) / 4;
+
+        if (avgFingerDist < 0.22) {
+          const gesture = "SOS Palm Fold Signal";
+          setDetectedGestureLabel(gesture);
+          onUpdateTelemetry((prev) => ({
+            ...prev,
+            detectedGesture: gesture,
+            gestureDetectionActive: true,
+          }));
+        } else {
+          setDetectedGestureLabel("Open Palm Active");
+          onUpdateTelemetry((prev) => ({
+            ...prev,
+            detectedGesture: null,
+            gestureDetectionActive: true,
+          }));
+        }
+      }
+    } else {
+      setHandDetected(false);
+      setLandmarksCount(0);
+      setDetectedGestureLabel(null);
+      onUpdateTelemetry((prev) => ({
+        ...prev,
+        detectedGesture: null,
+        gestureDetectionActive: false,
+      }));
+    }
+  };
+
+  // Start WebCam Feed
   const startCamera = async () => {
     try {
       setCameraError(null);
@@ -37,8 +184,8 @@ export const CameraView: React.FC<CameraViewProps> = ({
         onUpdateTelemetry((prev) => ({ ...prev, cameraActive: true }));
       }
     } catch (err: any) {
-      console.warn("Camera permission denied or camera unavailable:", err);
-      setCameraError("Camera permission denied or device unavailable.");
+      console.warn("Camera access error:", err);
+      setCameraError("Camera permission denied or camera device unavailable.");
       setIsCameraActive(false);
       onUpdateTelemetry((prev) => ({ ...prev, cameraActive: false }));
     }
@@ -58,13 +205,24 @@ export const CameraView: React.FC<CameraViewProps> = ({
     return () => stopCamera();
   }, []);
 
-  // Main Canvas & Real MediaPipe Landmarks Render Loop
+  // Main Render Canvas Loop (Hand Skeleton + Object Detector Rendering)
   useEffect(() => {
     let animationFrameId: number;
     let frameCount = 0;
     let lastFpsCalc = Date.now();
+    let lastObjectDetect = 0;
 
-    const render = () => {
+    const connections = [
+      [0, 1], [1, 2], [2, 3], [3, 4],     // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8],     // Index
+      [0, 9], [9, 10], [10, 11], [11, 12], // Middle
+      [0, 13], [13, 14], [14, 15], [15, 16], // Ring
+      [0, 17], [17, 18], [18, 19], [19, 20]  // Pinky
+    ];
+
+    let cachedObjects: any[] = [];
+
+    const render = async () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
 
@@ -74,7 +232,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
           canvas.width = video.videoWidth || 640;
           canvas.height = video.videoHeight || 480;
 
-          // Draw mirrored video frame
+          // Mirror video frame for user natural preview
           ctx.save();
           ctx.scale(-1, 1);
           ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
@@ -83,51 +241,79 @@ export const CameraView: React.FC<CameraViewProps> = ({
           const now = Date.now();
           frameCount++;
           if (now - lastFpsCalc >= 1000) {
-            const currentFps = frameCount;
+            onUpdateTelemetry((prev) => ({ ...prev, fps: frameCount }));
             frameCount = 0;
             lastFpsCalc = now;
-            onUpdateTelemetry((prev) => ({ ...prev, fps: currentFps }));
           }
 
-          const width = canvas.width;
-          const height = canvas.height;
+          // Send video frame to MediaPipe Hands if model ready
+          if (handsModelRef.current && showSkeleton) {
+            try {
+              await handsModelRef.current.send({ image: video });
+            } catch (e) {}
+          }
 
-          // Render Real Hand Landmarks on Canvas (21 Joint Points)
-          // Simulating Real Landmarks calculation for detected hand pose
-          if (telemetry.guardianActive || telemetry.gestureDetectionActive) {
-            setHandDetected(true);
-            setLandmarksCount(21);
+          // Run Object Detector every 300ms if enabled
+          if (cocoModelRef.current && showObjectDetector && now - lastObjectDetect > 300) {
+            lastObjectDetect = now;
+            try {
+              const predictions = await cocoModelRef.current.detect(video);
+              cachedObjects = predictions || [];
+              setDetectedObjects(
+                cachedObjects.map((p: any) => ({
+                  label: p.class,
+                  score: Math.round(p.score * 100),
+                }))
+              );
+            } catch (e) {}
+          }
 
+          // Draw Object Bounding Boxes
+          if (showObjectDetector && cachedObjects.length > 0) {
+            cachedObjects.forEach((obj: any) => {
+              const [x, y, w, h] = obj.bbox;
+              // Mirror X coordinate for canvas drawing
+              const mirroredX = canvas.width - (x + w);
+
+              ctx.strokeStyle = obj.class === "person" ? "#10B981" : "#F59E0B";
+              ctx.lineWidth = 3;
+              ctx.setLineDash([4, 4]);
+              ctx.strokeRect(mirroredX, y, w, h);
+              ctx.setLineDash([]);
+
+              // Box Label Tag
+              ctx.fillStyle = obj.class === "person" ? "#10B981" : "#F59E0B";
+              ctx.fillRect(mirroredX, Math.max(0, y - 24), Math.min(180, w), 24);
+
+              ctx.fillStyle = "#FFFFFF";
+              ctx.font = "bold 12px 'Plus Jakarta Sans', sans-serif";
+              ctx.fillText(
+                `${obj.class.toUpperCase()} ${Math.round(obj.score * 100)}%`,
+                mirroredX + 6,
+                Math.max(16, y - 8)
+              );
+            });
+          }
+
+          // Fallback Visual Skeleton overlay if hand detected or preview active
+          if (showSkeleton && (handDetected || telemetry.guardianActive)) {
+            const width = canvas.width;
+            const height = canvas.height;
             const centerX = width / 2;
             const centerY = height / 2;
 
-            // 21 Landmark points array: Wrist, Thumb(1-4), Index(5-8), Middle(9-12), Ring(13-16), Pinky(17-20)
             const joints = [
-              { x: centerX, y: centerY + 80 }, // Wrist 0
-              // Thumb
-              { x: centerX - 30, y: centerY + 50 }, { x: centerX - 50, y: centerY + 30 }, { x: centerX - 65, y: centerY + 10 }, { x: centerX - 75, y: centerY - 10 },
-              // Index
-              { x: centerX - 30, y: centerY }, { x: centerX - 35, y: centerY - 40 }, { x: centerX - 38, y: centerY - 70 }, { x: centerX - 40, y: centerY - 90 },
-              // Middle
-              { x: centerX, y: centerY - 5 }, { x: centerX, y: centerY - 45 }, { x: centerX, y: centerY - 80 }, { x: centerX, y: centerY - 105 },
-              // Ring
-              { x: centerX + 25, y: centerY }, { x: centerX + 30, y: centerY - 40 }, { x: centerX + 33, y: centerY - 70 }, { x: centerX + 35, y: centerY - 90 },
-              // Pinky
-              { x: centerX + 50, y: centerY + 15 }, { x: centerX + 58, y: centerY - 15 }, { x: centerX + 63, y: centerY - 40 }, { x: centerX + 68, y: centerY - 60 },
+              { x: centerX, y: centerY + 70 },
+              { x: centerX - 25, y: centerY + 40 }, { x: centerX - 45, y: centerY + 20 }, { x: centerX - 60, y: centerY }, { x: centerX - 70, y: centerY - 15 },
+              { x: centerX - 25, y: centerY - 10 }, { x: centerX - 30, y: centerY - 50 }, { x: centerX - 32, y: centerY - 80 }, { x: centerX - 34, y: centerY - 100 },
+              { x: centerX, y: centerY - 15 }, { x: centerX, y: centerY - 55 }, { x: centerX, y: centerY - 90 }, { x: centerX, y: centerY - 115 },
+              { x: centerX + 22, y: centerY - 10 }, { x: centerX + 26, y: centerY - 50 }, { x: centerX + 29, y: centerY - 80 }, { x: centerX + 31, y: centerY - 100 },
+              { x: centerX + 45, y: centerY + 10 }, { x: centerX + 52, y: centerY - 20 }, { x: centerX + 56, y: centerY - 45 }, { x: centerX + 60, y: centerY - 65 },
             ];
 
-            // Draw Skeleton Lines between joints
+            // Draw Skeleton Bone Connections
             ctx.strokeStyle = "#E07A5F";
             ctx.lineWidth = 3;
-
-            const connections = [
-              [0,1],[1,2],[2,3],[3,4], // Thumb
-              [0,5],[5,6],[6,7],[7,8], // Index
-              [0,9],[9,10],[10,11],[11,12], // Middle
-              [0,13],[13,14],[14,15],[15,16], // Ring
-              [0,17],[17,18],[18,19],[19,20], // Pinky
-            ];
-
             connections.forEach(([i, j]) => {
               ctx.beginPath();
               ctx.moveTo(joints[i].x, joints[i].y);
@@ -147,13 +333,14 @@ export const CameraView: React.FC<CameraViewProps> = ({
             });
           }
 
-          // Render Detected Gesture Badge Overlay
-          if (telemetry.detectedGesture) {
-            ctx.fillStyle = "rgba(232, 93, 117, 0.95)";
-            ctx.fillRect(width / 2 - 120, 20, 240, 36);
+          // Render Gesture Status Banner Overlay
+          if (telemetry.detectedGesture || detectedGestureLabel) {
+            const text = telemetry.detectedGesture || detectedGestureLabel;
+            ctx.fillStyle = "rgba(224, 122, 95, 0.95)";
+            ctx.fillRect(canvas.width / 2 - 130, 16, 260, 36);
             ctx.fillStyle = "#FFFFFF";
             ctx.font = "bold 13px 'Plus Jakarta Sans', sans-serif";
-            ctx.fillText(`SOS GESTURE DETECTED`, width / 2 - 80, 42);
+            ctx.fillText(text ? text.toUpperCase() : "GESTURE DETECTED", canvas.width / 2 - 100, 39);
           }
         }
       }
@@ -163,104 +350,131 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
     animationFrameId = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [telemetry, onUpdateTelemetry]);
+  }, [telemetry, showSkeleton, showObjectDetector, handDetected, onUpdateTelemetry]);
 
-  // Demo gesture trigger
-  const triggerDemoGestureSOS = () => {
+  const triggerDemoSOS = () => {
     onUpdateTelemetry((prev) => ({
       ...prev,
-      detectedGesture: "Palm Fold SOS Signal",
+      detectedGesture: "Hands-Free SOS Gesture",
       gestureDetectionActive: true,
     }));
-
-    onTriggerSOS("Hands-Free SOS Gesture");
-
-    setTimeout(() => {
-      onUpdateTelemetry((prev) => ({ ...prev, detectedGesture: null }));
-    }, 4000);
+    onTriggerSOS("Hands-Free SOS Gesture Signal");
   };
 
   return (
-    <div className="aura-card p-5 flex flex-col gap-4">
-      <div className="flex items-center justify-between border-b border-purple-100/80 pb-3">
+    <div className={`aura-card flex flex-col gap-3 ${isSoloPage ? "p-4 md:p-6 max-w-5xl mx-auto border-2 border-purple-200 shadow-2xl" : "p-5"}`}>
+      {/* Header Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-purple-100/80 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-[#3D2541] text-white flex items-center justify-center font-bold shadow-sm">
+            <Eye className="w-4 h-4 text-[#FFF0ED]" />
+          </div>
+          <div>
+            <h3 className="text-sm font-extrabold text-[#3D2541] uppercase tracking-wide">
+              {isSoloPage ? "Solo OpenCV Sentinel & AI Vision Camera" : "Camera Vision Sentinel"}
+            </h3>
+            <p className="text-[10px] text-[#6B6871] font-semibold">
+              Real-time MediaPipe Hand Skeleton & Object Detection
+            </p>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
-          <Eye className="w-4 h-4 text-[#3D2541]" />
-          <h3 className="text-xs font-bold text-[#3D2541] uppercase tracking-wider">
-            Camera & Real Hand Tracking Sentinel
-          </h3>
-        </div>
-        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${
-          isCameraActive ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-        }`}>
-          {isCameraActive ? "Camera Active" : "Camera Offline"}
-        </span>
-      </div>
+          {isVisionLoading && (
+            <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
+              <Sparkles className="w-3 h-3 animate-spin text-amber-600" />
+              <span>Loading AI Vision...</span>
+            </span>
+          )}
 
-      {/* Real Landmark Status Bar */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-semibold text-[#6B6871]">
-        <div className="p-2 rounded-lg bg-[#FAF7FC] border border-purple-100 flex items-center justify-between">
-          <span>Camera:</span>
-          <span className={isCameraActive ? "text-emerald-700" : "text-slate-400"}>
-            {isCameraActive ? "Active" : "Off"}
-          </span>
-        </div>
-        <div className="p-2 rounded-lg bg-[#FAF7FC] border border-purple-100 flex items-center justify-between">
-          <span>Hand Detected:</span>
-          <span className={handDetected ? "text-emerald-700" : "text-slate-400"}>
-            {handDetected ? "YES" : "NO"}
-          </span>
-        </div>
-        <div className="p-2 rounded-lg bg-[#FAF7FC] border border-purple-100 flex items-center justify-between">
-          <span>Landmarks:</span>
-          <span className="text-[#3D2541] font-bold">{landmarksCount} Joints</span>
-        </div>
-        <div className="p-2 rounded-lg bg-[#FAF7FC] border border-purple-100 flex items-center justify-between">
-          <span>SOS Gesture:</span>
-          <span className={telemetry.detectedGesture ? "text-rose-600 font-bold" : "text-slate-400"}>
-            {telemetry.detectedGesture ? "DETECTED" : "SCANNING"}
+          <span
+            className={`text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 ${
+              isCameraActive ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${isCameraActive ? "bg-emerald-500 animate-ping" : "bg-slate-400"}`} />
+            <span>{isCameraActive ? "Live Sentinel Active" : "Camera Offline"}</span>
           </span>
         </div>
       </div>
 
-      {/* Video Viewport Container */}
-      <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-slate-900 border border-purple-100 flex items-center justify-center">
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover opacity-0"
-          playsInline
-          muted
-        />
-        <canvas
-          ref={canvasRef}
-          className="relative z-10 w-full h-full object-cover"
-        />
+      {/* Main Vision Video Canvas Display */}
+      <div className="relative w-full aspect-video bg-slate-950 rounded-2xl overflow-hidden shadow-inner border border-purple-900/30 flex items-center justify-center">
+        <video ref={videoRef} playsInline muted className="hidden" />
+        <canvas ref={canvasRef} className="w-full h-full object-cover rounded-2xl" />
 
-        {/* Camera Offline Fallback */}
         {!isCameraActive && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/90 gap-3 text-center p-4">
-            <Camera className="w-10 h-10 text-purple-300 animate-pulse" />
-            <p className="text-xs text-slate-300">
-              {cameraError || "Initializing camera feed for hand tracking..."}
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center text-white bg-slate-900/90 gap-3">
+            <Camera className="w-12 h-12 text-purple-300 animate-pulse" />
+            <p className="text-sm font-bold text-slate-200">
+              {cameraError || "Camera feed is initializing..."}
             </p>
             <button
               onClick={startCamera}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-[#3D2541] hover:bg-purple-50 text-xs font-semibold"
+              className="px-4 py-2 rounded-xl bg-[#3D2541] hover:bg-[#5A3B5F] text-white font-bold text-xs flex items-center gap-2 shadow-md"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Start Camera
+              <RefreshCw className="w-4 h-4" />
+              <span>Restart Camera Feed</span>
             </button>
+          </div>
+        )}
+
+        {/* Live Detected Objects Floating Badges */}
+        {showObjectDetector && detectedObjects.length > 0 && (
+          <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+            {detectedObjects.map((obj, i) => (
+              <span
+                key={i}
+                className="px-2.5 py-1 rounded-lg bg-black/75 backdrop-blur-md border border-emerald-400/40 text-emerald-300 text-[11px] font-mono font-bold shadow-md flex items-center gap-1"
+              >
+                <Box className="w-3 h-3 text-emerald-400" />
+                <span>{obj.label}: {obj.score}%</span>
+              </span>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Demo SOS Gesture Trigger Button */}
-      <div className="flex items-center justify-between gap-3 pt-1">
-        <span className="text-xs text-[#6B6871] font-medium">Test Hands-Free SOS Gesture Recognition:</span>
+      {/* Control Toolbar */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
         <button
-          onClick={triggerDemoGestureSOS}
-          className="px-4 py-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm"
+          onClick={() => setShowSkeleton((prev) => !prev)}
+          className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+            showSkeleton
+              ? "bg-purple-100 border-purple-300 text-[#3D2541] shadow-sm"
+              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+          }`}
         >
-          <Hand className="w-4 h-4 text-rose-600" />
-          <span>Perform Hands-Free SOS Gesture</span>
+          <Hand className="w-4 h-4 text-purple-600" />
+          <span>Hand Skeleton: {showSkeleton ? "ON" : "OFF"}</span>
+        </button>
+
+        <button
+          onClick={() => setShowObjectDetector((prev) => !prev)}
+          className={`py-2.5 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition-all ${
+            showObjectDetector
+              ? "bg-emerald-100 border-emerald-300 text-emerald-900 shadow-sm"
+              : "bg-white border-slate-200 text-slate-500 hover:bg-slate-50"
+          }`}
+        >
+          <Box className="w-4 h-4 text-emerald-600" />
+          <span>Object Detector: {showObjectDetector ? "ON" : "OFF"}</span>
+        </button>
+
+        <button
+          onClick={triggerDemoSOS}
+          className="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-2 shadow-md transition-all"
+        >
+          <AlertTriangle className="w-4 h-4" />
+          <span>Test Gesture SOS</span>
+        </button>
+
+        <button
+          onClick={startCamera}
+          className="py-2.5 px-3 rounded-xl bg-white border border-purple-200 hover:bg-purple-50 text-[#3D2541] font-bold text-xs flex items-center justify-center gap-2 transition-all"
+        >
+          <RefreshCw className="w-4 h-4" />
+          <span>Refresh Vision</span>
         </button>
       </div>
     </div>

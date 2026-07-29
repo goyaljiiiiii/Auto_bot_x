@@ -14,24 +14,28 @@ import { TrustedContactsPanel } from "@/app/components/TrustedContactsPanel";
 import { IncidentHistoryPanel } from "@/app/components/IncidentHistoryPanel";
 import { SOSActivatedModal } from "@/app/components/SOSActivatedModal";
 import { DemoModeToggle } from "@/app/components/DemoModeToggle";
+import { GuardianPairingModal } from "@/app/components/GuardianPairingModal";
+import { WebVoiceMode } from "@/app/components/WebVoiceMode";
+import { KeyRound, Copy, CheckCircle2, Eye, ExternalLink } from "lucide-react";
+import Link from "next/link";
 
 const INITIAL_CONTACTS: TrustedContact[] = [
   {
     id: "contact-1",
     name: "Mom (Sarah)",
-    relationship: "Parent",
-    phone: "+1 (555) 019-2834",
+    relationship: "Parent / Family",
+    phone: "+91 98123 45678",
     email: "mom@example.com",
-    contactMethod: "Demo Alert",
+    contactMethod: "WhatsApp",
     isPrimary: true,
   },
   {
     id: "contact-2",
     name: "Elena Rostova",
-    relationship: "Roommate / Friend",
-    phone: "+1 (555) 948-1120",
+    relationship: "Friend / Roommate",
+    phone: "+91 98765 12345",
     email: "elena@example.com",
-    contactMethod: "Demo Alert",
+    contactMethod: "WhatsApp",
     isPrimary: false,
   },
 ];
@@ -39,8 +43,8 @@ const INITIAL_CONTACTS: TrustedContact[] = [
 const INITIAL_RELATIONSHIPS: TrustedRelationship[] = [
   {
     id: "rel-1",
-    ownerId: "usr-owner-1",
-    contactId: "usr-contact-1",
+    ownerId: "usr-nandini",
+    contactId: "usr-mom",
     contactName: "Mom (Sarah)",
     relationship: "Parent",
     contactEmail: "mom@example.com",
@@ -51,14 +55,16 @@ const INITIAL_RELATIONSHIPS: TrustedRelationship[] = [
       canSeeLocation: true,
       canSeeGuardianSessions: true,
       canSeeIncidents: true,
-      canSeeCamera: false,
+      canSeeCamera: true,
     },
   },
 ];
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<"overview" | "device" | "contacts" | "history">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "voice" | "device" | "contacts" | "history">("overview");
   const [demoModeActive, setDemoModeActive] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [copiedCode, setCopiedCode] = useState<boolean>(false);
 
   const [telemetry, setTelemetry] = useState<TelemetryState>({
     fps: 0,
@@ -87,6 +93,26 @@ export default function Home() {
   const portRef = useRef<any>(null);
   const writerRef = useRef<any>(null);
 
+  // Load Current Logged In User
+  useEffect(() => {
+    const stored = localStorage.getItem("aura_user");
+    if (stored) {
+      try {
+        setCurrentUser(JSON.parse(stored));
+      } catch (e) {}
+    } else {
+      const defaultUser = {
+        id: "usr-nandini",
+        name: "Nandini Goyal",
+        email: "nandini@example.com",
+        role: "ACCOUNT_OWNER",
+        safetyCode: "USR-8F92A1",
+      };
+      setCurrentUser(defaultUser);
+      localStorage.setItem("aura_user", JSON.stringify(defaultUser));
+    }
+  }, []);
+
   // Fetch Geolocation
   useEffect(() => {
     if ("geolocation" in navigator) {
@@ -103,6 +129,15 @@ export default function Home() {
       );
     }
   }, []);
+
+  // Copy Safety Code Handler
+  const copySafetyCode = () => {
+    if (currentUser?.safetyCode) {
+      navigator.clipboard.writeText(currentUser.safetyCode);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2500);
+    }
+  };
 
   // WebSerial Connection Handlers
   const connectSerial = async () => {
@@ -187,8 +222,8 @@ export default function Home() {
 
     const newRecord: CheckInRecord = {
       id: `chk-${Date.now()}`,
-      userId: "usr-owner-1",
-      userName: "Nandini Goyal",
+      userId: currentUser?.id || "usr-nandini",
+      userName: currentUser?.name || "Nandini Goyal",
       type,
       label,
       timestamp: timeStr,
@@ -213,7 +248,6 @@ export default function Home() {
       ? `https://maps.google.com/?q=${telemetry.latitude},${telemetry.longitude}`
       : undefined;
 
-    // Trigger IoT Companion Hardware Response
     setTelemetry((prev) => ({
       ...prev,
       safetyState: "SOS_ACTIVATED",
@@ -225,8 +259,7 @@ export default function Home() {
     sendSerialCommand("BUZZER:1");
     sendSerialCommand("SERVO:180");
 
-    // Fetch Factual Summary from Gemini API
-    let summaryText = `Emergency gesture detected while Guardian Mode was active. System safety response initiated.`;
+    let summaryText = `Emergency signal detected while Guardian Mode was active. System safety response initiated.`;
 
     try {
       const res = await fetch("/api/gemini", {
@@ -277,7 +310,6 @@ export default function Home() {
     sendSerialCommand("SERVO:90");
   };
 
-  // Run 1-Click Demo Scenario (For Hackathon Presentation)
   const runFullDemoScenario = () => {
     setDemoModeActive(true);
     if (!telemetry.guardianActive) toggleGuardianMode();
@@ -298,6 +330,51 @@ export default function Home() {
 
       {/* Main Container */}
       <main className="flex-1 p-4 md:p-8 max-w-7xl w-full mx-auto flex flex-col gap-6">
+        {/* User Safety Code Bar & Quick Solo Camera Access Banner */}
+        {currentUser && (
+          <div className="p-4 rounded-2xl bg-gradient-to-r from-[#3D2541] via-[#4A2E50] to-[#5A3B5F] text-white shadow-lg flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/30 border border-purple-300/30 flex items-center justify-center font-bold">
+                <KeyRound className="w-5 h-5 text-[#FFF0ED]" />
+              </div>
+              <div>
+                <p className="text-[10px] text-purple-200 uppercase font-bold tracking-wider">
+                  Your Unique Safety Code (Share with Guardians)
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-base font-extrabold tracking-widest text-[#FFF0ED]">
+                    {currentUser.safetyCode || "USR-8F92A1"}
+                  </span>
+                  <button
+                    onClick={copySafetyCode}
+                    className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1 transition-all"
+                  >
+                    {copiedCode ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedCode ? "Copied!" : "Copy Code"}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <Link
+              href="/camera"
+              className="px-4 py-2.5 rounded-xl bg-[#E07A5F] hover:bg-[#D0694E] text-white text-xs font-extrabold flex items-center gap-2 shadow-md transition-all"
+            >
+              <Eye className="w-4 h-4" />
+              <span>Launch Solo Camera View</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        )}
+
+        {/* Real-time Guardian Link Notification Requests */}
+        {currentUser && (
+          <GuardianPairingModal
+            currentUserId={currentUser.id}
+            onRelationshipAdded={() => console.log("New relationship added!")}
+          />
+        )}
+
         {/* Demo Mode Banner */}
         <DemoModeToggle
           demoModeActive={demoModeActive}
@@ -317,13 +394,19 @@ export default function Home() {
           }}
         />
 
-        {/* Live Safety Status Panel (5 Core Questions) */}
+        {/* Live Safety Status Panel */}
         <LiveSafetyStatus telemetry={telemetry} relationships={relationships} />
+
+        {/* Web-Only Voice Assistant & Routine Manager Section */}
+        <WebVoiceMode
+          onTriggerSOS={(reason) => triggerSOSFlow(reason)}
+          onNavigate={(path) => console.log("Navigate to", path)}
+        />
 
         {/* Tab Views */}
         {activeTab === "overview" && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Left 7 Cols: Central Status Card, Camera & Check-ins */}
+            {/* Left 7 Cols */}
             <div className="lg:col-span-7 flex flex-col gap-6">
               <GuardianStatusCard
                 telemetry={telemetry}
@@ -343,7 +426,7 @@ export default function Home() {
               />
             </div>
 
-            {/* Right 5 Cols: AI Assistant, IoT Companion & Contacts */}
+            {/* Right 5 Cols */}
             <div className="lg:col-span-5 flex flex-col gap-6">
               <AuraAIAssistant
                 onStartGuardianMode={() => {
@@ -364,32 +447,14 @@ export default function Home() {
               <TrustedContactsPanel
                 contacts={contacts}
                 onAddContact={(c) => setContacts((prev) => [...prev, c])}
+                onUpdateContact={(updated) =>
+                  setContacts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)))
+                }
+                onDeleteContact={(id) => setContacts((prev) => prev.filter((c) => c.id !== id))}
                 onSendDemoAlert={(c) => triggerSOSFlow(`Demo Alert for ${c.name}`)}
               />
             </div>
           </div>
-        )}
-
-        {activeTab === "device" && (
-          <DeviceControlPanel
-            telemetry={telemetry}
-            onConnectSerial={connectSerial}
-            onDisconnectSerial={disconnectSerial}
-            onSendSerialCommand={sendSerialCommand}
-            onUpdateTelemetry={setTelemetry}
-          />
-        )}
-
-        {activeTab === "contacts" && (
-          <TrustedContactsPanel
-            contacts={contacts}
-            onAddContact={(c) => setContacts((prev) => [...prev, c])}
-            onSendDemoAlert={(c) => triggerSOSFlow(`Demo Alert for ${c.name}`)}
-          />
-        )}
-
-        {activeTab === "history" && (
-          <IncidentHistoryPanel incidents={incidents} />
         )}
       </main>
 

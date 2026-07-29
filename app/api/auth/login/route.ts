@@ -22,6 +22,8 @@ export async function POST(req: Request) {
         name: user.name,
         email: user.email,
         role: user.role,
+        safetyCode: user.safetyCode,
+        phone: user.phone,
       },
     });
   } catch (error) {
