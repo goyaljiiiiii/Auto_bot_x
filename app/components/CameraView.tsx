@@ -45,6 +45,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
   const handsModelRef = useRef<any>(null);
   const cocoModelRef = useRef<any>(null);
   const latestHandLandmarksRef = useRef<any[]>([]);
+  const sosGestureTimerRef = useRef<any>(null);
 
   // Load Computer Vision Scripts (MediaPipe Hands + COCO-SSD Object Detector)
   useEffect(() => {
@@ -160,14 +161,27 @@ export const CameraView: React.FC<CameraViewProps> = ({
 
         setGestureText(label);
 
-        // If 2 Fingers or Fist held in monitoring mode, trigger gesture telemetry
+        // If 2 Fingers or Palm Fold held in monitoring mode, trigger gesture telemetry & auto SOS
         if (count === 2 || count === 0) {
           onUpdateTelemetry((prev) => ({
             ...prev,
             detectedGesture: label,
             gestureDetectionActive: true,
           }));
+
+          if (telemetry.safetyState !== "SOS") {
+            if (!sosGestureTimerRef.current) {
+              sosGestureTimerRef.current = setTimeout(() => {
+                onTriggerSOS(`Camera Gesture Triggered: ${label}`);
+                sosGestureTimerRef.current = null;
+              }, 1200);
+            }
+          }
         } else {
+          if (sosGestureTimerRef.current) {
+            clearTimeout(sosGestureTimerRef.current);
+            sosGestureTimerRef.current = null;
+          }
           onUpdateTelemetry((prev) => ({
             ...prev,
             detectedGesture: null,
@@ -176,6 +190,10 @@ export const CameraView: React.FC<CameraViewProps> = ({
         }
       }
     } else {
+      if (sosGestureTimerRef.current) {
+        clearTimeout(sosGestureTimerRef.current);
+        sosGestureTimerRef.current = null;
+      }
       latestHandLandmarksRef.current = [];
       setHandDetected(false);
       setFingerCount(0);
