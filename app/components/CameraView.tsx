@@ -169,7 +169,7 @@ export const CameraView: React.FC<CameraViewProps> = ({
             gestureDetectionActive: true,
           }));
 
-          if (telemetry.safetyState !== "SOS") {
+          if (telemetry.safetyState !== "SOS_ACTIVATED") {
             if (!sosGestureTimerRef.current) {
               sosGestureTimerRef.current = setTimeout(() => {
                 onTriggerSOS(`Camera Gesture Triggered: ${label}`);

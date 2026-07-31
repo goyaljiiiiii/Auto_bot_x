@@ -93,12 +93,25 @@ export const SOSActivatedModal: React.FC<SOSActivatedModalProps> = ({
         </div>
 
         {/* Actions */}
-        <button
-          onClick={onDismiss}
-          className="w-full py-3 rounded-xl bg-[#3D2541] hover:bg-[#5A3B5F] text-white font-semibold text-xs transition-all shadow-md flex items-center justify-center gap-2"
-        >
-          <X className="w-4 h-4" /> Reset Guardian State
-        </button>
+        <div className="w-full flex flex-col sm:flex-row gap-2.5">
+          <a
+            href={`https://wa.me/${primaryContact?.phone ? primaryContact.phone.replace(/[^0-9]/g, "") : ""}?text=${encodeURIComponent(
+              `🚨 AURA SENTINEL SOS EMERGENCY ALERT! 🚨\n\nTrigger: ${incident.triggerType}\nTime: ${incident.time}\nLocation: ${locationUrl || "GPS Locked"}\n\nSummary (Gemini AI):\n${incident.summary}`
+            )}`}
+            target="_blank"
+            rel="noreferrer"
+            className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+          >
+            <Send className="w-4 h-4" /> Send WhatsApp SOS Alert
+          </a>
+
+          <button
+            onClick={onDismiss}
+            className="flex-1 py-3 rounded-xl bg-[#3D2541] hover:bg-[#5A3B5F] text-white font-extrabold text-xs transition-all shadow-md flex items-center justify-center gap-2"
+          >
+            <X className="w-4 h-4" /> Reset Safety State
+          </button>
+        </div>
       </div>
     </div>
   );

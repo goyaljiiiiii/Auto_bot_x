@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OmniSight Care AI • Assistive Vision & IoT Smart Guardian",
-  description: "Next-generation assistive smart home & health guardian combining browser computer vision, WebSerial IoT hardware tracking, and AI medical profiles.",
+  title: "Aura Sentinel 🛡️ | Hands-Free AI + IoT Safety Companion",
+  description: "A calm, modern, consumer-grade safety companion using computer vision, hand gesture recognition, Google Gemini AI, and IoT hardware.",
 };
 
 export default function RootLayout({
@@ -13,7 +13,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased min-h-screen flex flex-col bg-[#05070e] text-slate-100">
+      <body className="antialiased min-h-screen flex flex-col bg-[#FAF8F5] text-[#2D2B30]">
         {children}
       </body>
     </html>
